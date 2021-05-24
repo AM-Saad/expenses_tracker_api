@@ -1,0 +1,8 @@
+{
+    "env": {
+        "MONGO_USER": "abdelrhman",
+        "MONGO_PASSWORD": "ingodwetrust",
+        "DATABASE_URL": "expenses-tracker",
+        "NODE_ENV": "production"
+    }
+}
