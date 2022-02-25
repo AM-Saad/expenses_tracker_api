@@ -9,7 +9,6 @@ autoIncrement.initialize(connection);
 
 const billSchema = new Schema({
 
-    billtype: String,
     category: String,
     user: {
         id: {

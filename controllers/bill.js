@@ -1,57 +1,49 @@
 const User = require("../models/User");
 const Bill = require("../models/Bill");
 const Card = require("../models/Card");
-// const Notification = require("../models/Notification");
-// const formatDate = require("../models/methods/formatDate");
-// const notificationsMethods = require("../models/methods/notificationsMethods");
 const moment = require('moment')
 const axios = require('axios').default
-// const mongoose = require('mongoose')
 let session;
 
 
-exports.getAllbills = async (req, res, next) => {
+exports.getBills = async (req, res, next) => {
   const fromDate = req.query.from;
   const toDate = req.query.to;
   let query = {}
   if (req.query) {
     if (req.query.no) {
-      query = { serialNo: req.query.no }
-    } else if (req.query.category) {
-      query = { category: req.query.category }
-    } else if (req.query.id) {
-      query = { _id: req.query.id }
+      query = { shipmentNo: req.query.no, 'creator.id': req.user._id }
     } else if (req.query.status) {
-      query = { 'status.paid': req.query.status }
+      query = { 'status.no': req.query.status, 'creator.id': req.user._id }
+    } else if (req.query.id) {
+      query = { _id: req.query.id, 'creator.id': req.user._id }
+    } else if (req.query.category) {
+      query = { category: req.query.category, 'creator.id': req.user._id }
     } else {
-      query = { [req.query.type]: { $gte: fromDate, $lte: toDate } }
+      query = { [req.query.type]: { $gte: fromDate, $lte: toDate }, 'creator.id': req.user._id }
     }
-    console.log(query);
   }
   try {
     const bills = await Bill.find(query)
     return res.status(200).json({ bills: bills, message: 'Bills Fetched', messageType: 'success' })
   } catch (error) { return res.status(500).json({ message: ' cannot fetched', messageType: 'danger' }) }
 }
+
 exports.createBill = async (req, res, next) => {
-  const { date, billtype, category, duo, amount, notes, paid, approved, cardId } = req.body
+  const { date, category, duo, amount, notes, paid, approved, cardId } = req.body
 
   try {
 
     const newBill = new Bill({
-      shipment: {
-
-      },
-      billtype: billtype,
       category: category,
       notes: notes,
-      approved: approved,
+      approved: approved || true,
       amount: amount,
       date: moment().format('YYYY-MM-DD'),
       release_date: moment(date).format('YYYY-MM-DD'),
       duo: moment(duo).format('YYYY-MM-DD'),
       status: {
-        paid: paid || false,
+        paid: paid || true,
         changedBy: null,
         note: ''
       },
@@ -61,27 +53,27 @@ exports.createBill = async (req, res, next) => {
       },
       card: cardId
     })
+
+    const jwt = req.get('Authorization').split(' ')[1]
+    const response = await axios.put(`http://localhost:3000/cards/withdraw/${cardId}`, {
+      amount: amount,
+    }, {
+        headers: {
+          Authorization: "Bearer " + jwt,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      })
     await newBill.save()
-
-    // if (category === 'commission' || category === "custody") {
-    //   const driver = await Driver.findById(itemId)
-    //   driver[category].push({ amount: amount, date: moment().format('YYYY-MM-DD'), done: paid, bill: newBill._id })
-    //   await driver.save()
-    // }
-    // if (category === 'fuels' || category === 'maintenance') {
-    //   const vehicles = await Vehicle.findById(itemId)
-    //   console.log(vehicles);
-    //   vehicles[category].push({ amount: amount, date: moment().format('YYYY-MM-DD'), done: paid, bill: newBill._id })
-    //   await vehicles.save()
-    // }
-
-    return res.status(200).json({ message: 'Bill Saved', messageType: 'success', bill: newBill })
+    return res.status(200).json({ message: 'Bill Saved', messageType: 'success', bill: newBill, card: response.data.card })
 
   } catch (error) {
-    console.log(error);
+    console.log(error)
     return res.status(500).json({ message: 'cannot compelete the process, try to re-login', messageType: 'danger' })
   }
 }
+
+
 exports.assignExpenses = async (req, res, next) => {
   const expensesId = req.query.expensesId
   const employeeId = req.query.employeeId
@@ -121,6 +113,8 @@ exports.assignExpenses = async (req, res, next) => {
     return res.status(500).json({ message: 'cannot compelete the process, try to re-login', messageType: 'danger' })
   }
 }
+
+
 exports.paidStatus = async (req, res, next) => {
   const id = req.params.id
 
@@ -138,7 +132,6 @@ exports.paidStatus = async (req, res, next) => {
       if (driver) {
         const idx = driver[bill.category].findIndex(i => i.bill.toString() === bill._id.toString())
         driver[bill.category][idx].done = true
-        console.log(driver);
         await driver.save({ session })
       }
     }
@@ -153,52 +146,75 @@ exports.paidStatus = async (req, res, next) => {
     return res.status(500).json({ message: 'cannot compelete the process, try to re-login', messageType: 'danger' })
   }
 }
-exports.deleteBill = async (req, res, next) => {
+
+
+exports.getBill = async (req, res, next) => {
   const id = req.params.id
   try {
-    const expenses = await Bill.findOne({ _id: id })
-
-    await expenses.remove()
-    return res.status(200).json({ message: 'Bill Deleted', messageType: 'success' })
-    //Send Notifications for employee
+    const bill = await Bill.findOne({ _id: id })
+    if (!bill) return res.status(404).json({ message: 'Bill not exist', messageType: 'info' })
+    return res.status(200).json({ message: 'Bill Deleted', messageType: 'success', bill: bill })
   } catch (error) {
     return res.status(500).json({ message: 'cannot compelete the process, try to re-login', messageType: 'danger' })
   }
 }
-exports.customTypes = async (req, res, next) => {
+
+
+exports.deleteBill = async (req, res, next) => {
+  const id = req.params.id
+  try {
+    const bill = await Bill.findOne({ _id: id })
+    if (!bill) return res.status(404).json({ message: 'Bill not exist', messageType: 'info' })
+
+    await bill.remove()
+    return res.status(200).json({ message: 'Bill Deleted', messageType: 'success' })
+  } catch (error) {
+    return res.status(500).json({ error: err, message: 'Something went wrong, Please try again later', messageType: 'danger' })
+
+  }
+}
+
+
+exports.categories = async (req, res, next) => {
   try {
     const user = await User.findOne({ _id: req.user._id })
-    return res.status(200).json({ message: 'added', messageType: 'success', types: user.expensesTypes })
+    return res.status(200).json({ message: 'added', messageType: 'success', types: user.categories })
   } catch (err) {
     return res.status(500).json({ error: err, message: 'Something went wrong, Please try again later', messageType: 'error' })
   }
 }
-exports.createCustomType = async (req, res, next) => {
+
+
+exports.createCategory = async (req, res, next) => {
   try {
     const user = await User.findOne({ _id: req.user._id })
 
     if (req.body.type == '') return res.status(404).json({ message: 'Add type name', messageType: 'info' })
-    const exsistType = user.expensesTypes.filter(t => {
+    const exist = user.categories.filter(t => {
       return t === req.body.type
     })
-    if (exsistType.length > 0) {
+    if (exist.length > 0) {
       return res.status(404).json({ message: 'Exist type with same name', messageType: 'warning' })
     }
-    user.expensesTypes.push(req.body.type)
+    user.categories.push(req.body.type)
     await user.save()
-    return res.status(200).json({ message: 'added', messageType: 'success', type: req.body.type })
+    return res.status(200).json({ message: 'added', messageType: 'success', category: req.body.type })
   } catch (err) {
     return res.status(500).json({ error: err, message: 'Something went wrong, Please try again later', messageType: 'error' })
   }
 }
-exports.deleteCustomType = async (req, res, next) => {
+
+
+exports.deleteCategory = async (req, res, next) => {
   const type = req.body.type
   try {
-    const company = await User.findOne({ _id: req.user._id })
-    const oldtypes = company.expensesTypes.filter(t => t != type)
-    company.expensesTypes = oldtypes
-    await company.save()
-    return res.status(200).json({ message: 'deleted', messageType: 'success', types: oldtypes })
+    const user = await User.findOne({ _id: req.user._id })
+    const categories = user.categories.filter(t => t != type)
+    user.categories = categories
+    await user.save()
+    return res.status(200).json({ message: 'deleted', messageType: 'success', categories: categories })
 
-  } catch (err) { return res.status(500).json({ error: err, message: 'Something went wrong, Please try again later', messageType: 'error' }) }
+  } catch (err) {
+    return res.status(500).json({ error: err, message: 'Something went wrong, Please try again later', messageType: 'error' })
+  }
 }

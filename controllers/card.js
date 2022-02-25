@@ -72,8 +72,6 @@ exports.withdraw = async (req, res, next) => {
 
     try {
         const card = await Card.findOne({ _id: cardId })
-        console.log(card);
-
         card.balance -= amount
         let newprocess = {
             amount: amount,
@@ -84,7 +82,6 @@ exports.withdraw = async (req, res, next) => {
             transactionType: 'Withdraw'
 
         }
-        console.log(newprocess);
         card.transaction.push(newprocess)
 
         await card.save()

@@ -26,7 +26,7 @@ const userSchema = new Schema({
         date: String,
         time: String
     },
-    expensesTypes: [
+    categories: [
         { type: String }
     ],
     expenses: [
